@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ultimate Decision Spin Wheel</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a; /* Slate 900 */
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #475569; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b; 
+        }
+
+        .wheel-shadow {
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5), inset 0 0 20px rgba(0, 0, 0, 0.2);
+        }
+
+        .modal-animate-in {
+            animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        @keyframes popIn {
+            0% { transform: scale(0.8); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        .pointer-triangle {
+            width: 0; 
+            height: 0; 
+            border-left: 20px solid transparent;
+            border-right: 20px solid transparent;
+            border-top: 35px solid #ef4444;
+            filter: drop-shadow(0 4px 6px rgba(0,0,0,0.3));
+            z-index: 10;
+        }
+        
+        /* Mobile specific adjustments */
+        @media (max-width: 768px) {
+            .app-grid {
+                grid-template-columns: 1fr;
+            }
+            .canvas-container {
+                order: -1;
+            }
+        }
+    </style>
+</head>
+<body class="h-screen flex flex-col text-slate-200 overflow-hidden">
+
+    <!-- Header -->
+    <header class="bg-slate-800 border-b border-slate-700 p-4 flex justify-between items-center z-20 shadow-md">
+        <div class="flex items-center gap-2">
+            <div class="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center font-bold text-white">S</div>
+            <h1 class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-cyan-400">SpinDecider</h1>
+        </div>
+        <div class="flex gap-3 text-sm">
+            <button onclick="toggleSound()" id="soundBtn" class="p-2 hover:bg-slate-700 rounded-full transition text-slate-400 hover:text-white" title="Toggle Sound">
+                🔊
+            </button>
+            <button onclick="app.showPresets()" class="hidden md:block px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-md transition text-slate-200 text-xs font-semibold uppercase tracking-wide">
+                Presets
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 relative flex overflow-hidden">
+        
+        <!-- Sidebar: Controls -->
+        <aside class="w-full md:w-80 lg:w-96 bg-slate-800/50 border-r border-slate-700 flex flex-col z-10 backdrop-blur-sm transition-all absolute md:relative h-full transform md:transform-none -translate-x-full md:translate-x-0" id="sidebar">
+            <!-- Tabs -->
+            <div class="flex border-b border-slate-700">
+                <button onclick="switchTab('entries')" class="flex-1 p-3 text-sm font-medium border-b-2 border-indigo-500 text-indigo-400 bg-slate-800/50">Entries</button>
+                <button onclick="switchTab('results')" class="flex-1 p-3 text-sm font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-700/50">Results</button>
+            </div>
+
+            <!-- Entries Tab -->
+            <div id="tab-entries" class="flex-1 flex flex-col p-4 gap-4 overflow-y-auto">
+                <div class="bg-slate-700/50 p-3 rounded-lg border border-slate-600">
+                    <label class="text-xs text-slate-400 font-semibold uppercase mb-2 block">Quick Edit (One per line)</label>
+                    <textarea id="bulkInput" rows="4" class="w-full bg-slate-900 border-slate-600 rounded p-2 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none resize-none placeholder-slate-600" placeholder="Pizza&#10;Burger&#10;Salad"></textarea>
+                    <div class="flex gap-2 mt-2">
+                        <button onclick="app.updateFromBulk()" class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-1.5 rounded text-xs font-bold transition">Update Wheel</button>
+                        <button onclick="app.shuffle()" class="px-3 bg-slate-600 hover:bg-slate-500 text-white rounded text-xs transition" title="Shuffle">🔀</button>
+                        <button onclick="app.sort()" class="px-3 bg-slate-600 hover:bg-slate-500 text-white rounded text-xs transition" title="Sort A-Z">Aa</button>
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-between mt-2">
+                    <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Segments (<span id="count">0</span>)</span>
+                    <label class="flex items-center gap-2 cursor-pointer group">
+                        <input type="checkbox" id="removeWinner" class="w-4 h-4 rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-indigo-500">
+                        <span class="text-xs text-slate-400 group-hover:text-slate-200">Remove Winner</span>
+                    </label>
+                </div>
+
+                <!-- Individual Items List -->
+                <div id="entriesList" class="flex-1 overflow-y-auto space-y-2 pr-1">
+                    <!-- Items injected by JS -->
+                </div>
+            </div>
+
+            <!-- Results Tab -->
+            <div id="tab-results" class="hidden flex-1 flex-col p-4 gap-2 overflow-y-auto">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-xs font-bold text-slate-400 uppercase">History</span>
+                    <button onclick="app.clearHistory()" class="text-xs text-red-400 hover:text-red-300">Clear</button>
+                </div>
+                <div id="historyList" class="space-y-2">
+                    <div class="text-center text-slate-500 text-sm mt-10 italic">Spin to see results here!</div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Toggle Sidebar Button (Mobile) -->
+        <button onclick="toggleSidebar()" class="md:hidden absolute top-4 left-4 z-20 bg-slate-800 p-2 rounded-md shadow-lg border border-slate-700">
+            <svg class="w-6 h-6 text-slate-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+        </button>
+
+        <!-- Canvas Area -->
+        <section class="flex-1 bg-slate-900 relative flex flex-col items-center justify-center p-4">
+            
+            <!-- Wheel Container -->
+            <div class="relative group">
+                <!-- Pointer -->
+                <div class="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-2 z-10 pointer-triangle drop-shadow-xl"></div>
+                
+                <!-- The Canvas -->
+                <canvas id="wheelCanvas" width="600" height="600" class="max-w-full max-h-[70vh] w-auto h-auto cursor-pointer wheel-shadow rounded-full transition-transform duration-300 hover:scale-[1.02] active:scale-[0.98]"></canvas>
+                
+                <!-- Center Button (Decoration) -->
+                <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 bg-white rounded-full shadow-lg flex items-center justify-center z-10 border-4 border-slate-200 pointer-events-none">
+                    <div class="w-4 h-4 bg-slate-800 rounded-full"></div>
+                </div>
+            </div>
+
+            <!-- Action Area -->
+            <div class="mt-8 flex flex-col items-center gap-4 z-10">
+                <button id="spinBtn" onclick="app.spin()" class="px-12 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-black text-2xl tracking-widest uppercase rounded-full shadow-lg shadow-indigo-500/30 transform transition hover:-translate-y-1 active:translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed">
+                    SPIN
+                </button>
+                <p class="text-slate-500 text-sm animate-pulse" id="instructionText">Tap wheel or button to start</p>
+            </div>
+
+            <!-- Confetti Canvas Layer -->
+            <canvas id="confettiCanvas" class="absolute inset-0 pointer-events-none z-30"></canvas>
+        </section>
+
+    </main>
+
+    <!-- Winner Modal -->
+    <div id="winnerModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 hidden opacity-0 transition-opacity duration-300">
+        <div class="bg-slate-800 border border-slate-600 p-8 rounded-2xl shadow-2xl max-w-sm w-full text-center transform scale-90 transition-transform duration-300" id="modalContent">
+            <h2 class="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-br from-yellow-300 to-orange-500 mb-2 filter drop-shadow-sm">WINNER!</h2>
+            <div class="text-5xl my-6 animate-bounce" id="winnerEmoji">🎉</div>
+            <p id="winnerText" class="text-2xl font-bold text-white mb-8 break-words leading-tight">Option Name</p>
+            <div class="flex gap-3 justify-center">
+                <button onclick="app.closeModal()" class="px-6 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-semibold transition">Close</button>
+                <button onclick="app.closeModal(); app.spin();" class="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-semibold transition shadow-lg shadow-indigo-500/20">Spin Again</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Presets Modal -->
+    <div id="presetsModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 hidden">
+        <div class="bg-slate-800 border border-slate-600 p-6 rounded-xl shadow-2xl max-w-md w-full m-4">
+            <h3 class="text-xl font-bold text-white mb-4">Load Preset</h3>
+            <div class="grid grid-cols-2 gap-3 mb-4">
+                <button onclick="app.loadPreset('numbers')" class="p-3 bg-slate-700 hover:bg-slate-600 rounded text-left border border-slate-600 hover:border-indigo-500 transition group">
+                    <div class="font-bold text-slate-200 group-hover:text-white">1-20</div>
+                    <div class="text-xs text-slate-400">Random numbers</div>
+                </button>
+                <button onclick="app.loadPreset('yesno')" class="p-3 bg-slate-700 hover:bg-slate-600 rounded text-left border border-slate-600 hover:border-indigo-500 transition group">
+                    <div class="font-bold text-slate-200 group-hover:text-white">Yes / No</div>
+                    <div class="text-xs text-slate-400">Simple decision</div>
+                </button>
+                <button onclick="app.loadPreset('food')" class="p-3 bg-slate-700 hover:bg-slate-600 rounded text-left border border-slate-600 hover:border-indigo-500 transition group">
+                    <div class="font-bold text-slate-200 group-hover:text-white">What to Eat?</div>
+                    <div class="text-xs text-slate-400">Pizza, Burger, etc.</div>
+                </button>
+                <button onclick="app.loadPreset('activities')" class="p-3 bg-slate-700 hover:bg-slate-600 rounded text-left border border-slate-600 hover:border-indigo-500 transition group">
+                    <div class="font-bold text-slate-200 group-hover:text-white">Activity</div>
+                    <div class="text-xs text-slate-400">Truth or Dare</div>
+                </button>
+            </div>
+            <button onclick="document.getElementById('presetsModal').classList.add('hidden')" class="w-full py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded font-medium">Cancel</button>
+        </div>
+    </div>
+
+    <script>
+        // --- Configuration & State ---
+        const CONFIG = {
+            colors: [
+                '#ef4444', '#f97316', '#f59e0b', '#84cc16', 
+                '#10b981', '#06b6d4', '#3b82f6', '#6366f1', 
+                '#8b5cf6', '#d946ef', '#f43f5e'
+            ],
+            friction: 0.985, // Air resistance (0-1)
+            minSpeed: 0.002, // Cutoff speed
+            spinDurationBase: 200, // Minimum frames
+        };
+
+        const PRESETS = {
+            numbers: Array.from({length: 20}, (_, i) => (i + 1).toString()),
+            yesno: ['Yes', 'No', 'Yes', 'No', 'Maybe'],
+            food: ['Pizza', 'Burger', 'Sushi', 'Salad', 'Tacos', 'Pasta', 'Steak', 'Sandwich'],
+            activities: ['Watch a Movie', 'Read a Book', 'Go for a Walk', 'Clean Room', 'Call a Friend', 'Sleep', 'Exercise']
+        };
+
+        let state = {
+            segments: ['Yes', 'No', 'Maybe', 'Try Again', 'Bonus'],
+            colors: [], // Assigned mapped colors
+            angle: 0, // Current rotation angle (radians)
+            velocity: 0, // Current angular velocity
+            isSpinning: false,
+            winner: null,
+            history: [],
+            soundEnabled: true
+        };
+
+        // --- Audio System (Web Audio API) ---
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        function playTone(freq, type, duration) {
+            if (!state.soundEnabled || audioCtx.state === 'suspended') {
+                audioCtx.resume().catch(() => {});
+                if (!state.soundEnabled) return;
+            }
+            
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+            
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration);
+        }
+
+        function playTick() {
+            // Wood block sound simulation
+            playTone(400, 'triangle', 0.05);
+        }
+
+        function playWin() {
+            // Major chord arpeggio
+            [523.25, 659.25, 783.99, 1046.50].forEach((freq, i) => {
+                setTimeout(() => playTone(freq, 'sine', 0.4), i * 100);
+            });
+        }
+
+        function toggleSound() {
+            state.soundEnabled = !state.soundEnabled;
+            const btn = document.getElementById('soundBtn');
+            btn.innerHTML = state.soundEnabled ? '🔊' : '🔇';
+            btn.classList.toggle('text-slate-400');
+            btn.classList.toggle('text-red-400');
+        }
+
+        // --- Core Application Logic ---
+        const app = {
+            init() {
+                this.canvas = document.getElementById('wheelCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.width = this.canvas.width;
+                this.height = this.canvas.height;
+                this.centerX = this.width / 2;
+                this.centerY = this.height / 2;
+                this.radius = Math.min(this.width, this.height) / 2 - 20;
+
+                // Handle Resize for Sharpness
+                this.resizeCanvas();
+                window.addEventListener('resize', () => this.resizeCanvas());
+
+                // Events
+                document.getElementById('wheelCanvas').addEventListener('click', () => {
+                    if(!state.isSpinning) this.spin();
+                });
+
+                // Init Data
+                this.updateColors();
+                this.renderEntriesList();
+                this.draw();
+                
+                // Animation Loop
+                requestAnimationFrame(this.animate.bind(this));
+            },
+
+            resizeCanvas() {
+                const container = this.canvas.parentElement;
+                const rect = container.getBoundingClientRect();
+                // Set display size (css)
+                // We keep internal resolution high (600x600) for quality, CSS handles physical size
+            },
+
+            updateColors() {
+                state.colors = state.segments.map((_, i) => CONFIG.colors[i % CONFIG.colors.length]);
+                document.getElementById('count').innerText = state.segments.length;
+                document.getElementById('bulkInput').value = state.segments.join('\n');
+            },
+
+            updateFromBulk() {
+                const text = document.getElementById('bulkInput').value;
+                const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                if (lines.length > 0) {
+                    state.segments = lines;
+                    this.updateColors();
+                    this.renderEntriesList();
+                    this.draw();
+                }
+            },
+
+            addSegment(text) {
+                if(!text) return;
+                state.segments.push(text);
+                this.updateColors();
+                this.renderEntriesList();
+                this.draw();
+            },
+
+            removeSegment(index) {
+                if(state.segments.length <= 1) return;
+                state.segments.splice(index, 1);
+                this.updateColors();
+                this.renderEntriesList();
+                this.draw();
+            },
+
+            shuffle() {
+                for (let i = state.segments.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [state.segments[i], state.segments[j]] = [state.segments[j], state.segments[i]];
+                }
+                this.updateColors();
+                this.renderEntriesList();
+                this.draw();
+            },
+
+            sort() {
+                state.segments.sort((a, b) => a.localeCompare(b));
+                this.updateColors();
+                this.renderEntriesList();
+                this.draw();
+            },
+
+            renderEntriesList() {
+                const container = document.getElementById('entriesList');
+                container.innerHTML = '';
+                state.segments.forEach((seg, i) => {
+                    const div = document.createElement('div');
+                    div.className = 'flex items-center gap-2 bg-slate-800 p-2 rounded border border-slate-700 group hover:border-indigo-500 transition-colors';
+                    
+                    const colorDot = document.createElement('div');
+                    colorDot.className = 'w-3 h-3 rounded-full shrink-0';
+                    colorDot.style.backgroundColor = state.colors[i];
+
+                    const input = document.createElement('input');
+                    input.className = 'bg-transparent text-sm text-slate-200 w-full outline-none';
+                    input.value = seg;
+                    input.onchange = (e) => {
+                        state.segments[i] = e.target.value;
+                        this.draw();
+                        document.getElementById('bulkInput').value = state.segments.join('\n');
+                    };
+
+                    const delBtn = document.createElement('button');
+                    delBtn.innerHTML = '×';
+                    delBtn.className = 'text-slate-500 hover:text-red-400 font-bold px-2';
+                    delBtn.onclick = () => this.removeSegment(i);
+
+                    div.appendChild(colorDot);
+                    div.appendChild(input);
+                    div.appendChild(delBtn);
+                    container.appendChild(div);
+                });
+            },
+
+           
